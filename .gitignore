@@ -12,7 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Kinda private u know?
 CLAUDE.md
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

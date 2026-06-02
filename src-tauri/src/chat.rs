@@ -13,6 +13,3 @@ struct Message {
     role: Role,
     content: String,
 }
-
-
-

@@ -5,7 +5,8 @@ fn greet(name: &str) -> String {
 }
 
 
-mod init;
+mod init;                                                                                                                                                                                                                
+mod config_manager; // ← add this                                                                                                                                                                                        
 use init::init;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
