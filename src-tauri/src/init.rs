@@ -1,15 +1,20 @@
 use std::path::PathBuf;
-use std::process::Command;
 
 use tauri::Manager;
+use tokio::process::Command;
+use tokio::time::{sleep, Duration};
 
 use crate::config_manager::{Config, find_ollama, load_config, save_config};
 
 
 pub async fn init(handle: tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let config_dir = con_dir(&handle)?;         // borrow, don't move
-    let config = load_config(config_dir)?;
-    let ollama_c = ollama_check(config).await?;
+    let config_dir = con_dir(&handle)?;
+    let config = load_config(config_dir.clone())?;
+
+    if ollama_check(config.clone()).await.is_err() {
+        start_ollama(config, config_dir).await?;
+    }
+
     Ok(())
 }
 
@@ -29,6 +34,7 @@ async fn ollama_check(ollama_config: Config) -> Result<String, Box<dyn std::erro
 }
 
 
+
 /// Starts the ollama server if it hasn't been started yet.
 async fn start_ollama(mut ollama_config: Config, config_dir: PathBuf) -> Result<(), Box<dyn std::error::Error>>
 {
@@ -44,6 +50,13 @@ async fn start_ollama(mut ollama_config: Config, config_dir: PathBuf) -> Result<
             path
         }
     };
-    Command::new(ollama_path).spawn()?;
-    Ok(())
+    Command::new(ollama_path).arg("serve").spawn()?;
+
+    for _ in 0..10 {
+        sleep(Duration::from_millis(500)).await;
+        if ollama_check(ollama_config.clone()).await.is_ok() {
+            return Ok(());
+        }
+    }
+    Err("Ollama started but never became ready".into())
 }

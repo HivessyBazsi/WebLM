@@ -1,7 +1,8 @@
 use serde::{Serialize, Deserialize};
 use std::path::PathBuf;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct Config {
     pub config_version: u32,
     pub ollama_url: String,
