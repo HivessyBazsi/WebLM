@@ -4,17 +4,15 @@ use tauri::Manager;
 use tokio::process::Command;
 use tokio::time::{sleep, Duration};
 
-use crate::config_manager::{Config, find_ollama, load_config, save_config};
+use crate::config_manager::{Config, LocalConfig, find_ollama, load_config, save_config};
 
 
 pub async fn init(handle: tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let config_dir = con_dir(&handle)?;
     let config = load_config(config_dir.clone())?;
 
-    if ollama_check(config.clone()).await.is_err() {
-        start_ollama(config, config_dir).await?;
-    }
-
+    load_local_model_prov(config.local_choice, config, config_dir).await?;
+    
     Ok(())
 }
 
@@ -54,9 +52,32 @@ async fn start_ollama(mut ollama_config: Config, config_dir: PathBuf) -> Result<
 
     for _ in 0..10 {
         sleep(Duration::from_millis(500)).await;
-        if ollama_check(ollama_config.clone()).await.is_ok() {
+        if reqwest::get(&ollama_config.ollama_url).await.is_ok() {
             return Ok(());
         }
     }
     Err("Ollama started but never became ready".into())
+}
+
+async fn load_local_model_prov(local_choice: LocalConfig, mut config: Config, config_dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> 
+{
+    match local_choice {
+        LocalConfig::Ollama => {
+            if ollama_check(config.clone()).await.is_err() {
+                start_ollama(config, config_dir).await?;
+            }
+        }
+        LocalConfig::LlamaCpp => {
+            start_llama_cpp(&mut config, &config_dir).await?;
+        }
+        LocalConfig::None => {
+            return Ok(());
+        }
+    }
+    Ok(())
+}
+
+async fn start_llama_cpp(_config: &mut Config, _config_dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    // TODO: Implement llama.cpp startup logic here (e.g., find executable, spawn process)
+    Ok(())
 }

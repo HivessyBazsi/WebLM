@@ -1,18 +1,30 @@
 use serde::{Serialize, Deserialize};
 use std::path::PathBuf;
 
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum LocalConfig {
+    Ollama,
+    LlamaCpp,
+    None,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct Config {
     pub config_version: u32,
+    pub local_choice: LocalConfig,
     pub ollama_url: String,
     pub ollama_path: Option<String>,
 }
+
+
 
 impl Default for Config {                                                                                                                                                                                                
     fn default() -> Self {
         Config {                                                                                                                                                                                                         
             config_version: 1,
+            local_choice: LocalConfig::Ollama,
             ollama_url: String::from("http://localhost:11434"),
             ollama_path: None
         }                                                                                                                                                                                                                

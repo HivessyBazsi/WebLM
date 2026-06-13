@@ -12,8 +12,20 @@ dist
 dist-ssr
 *.local
 
-# Kinda private u know?
+# Environment variables
+.env*
+
+# Rust / Tauri build artifacts
+WebLM/src-tauri/target/
+WebLM/src-tauri/gen/
+
+# AI/Code Assistant settings and memory files
 CLAUDE.md
+AGENTS.md
+.cursor/
+.github/copilot-instructions.md
+*.kilocode/
+.kilo/
 
 # Editor directories and files
 .vscode/*
