@@ -3,7 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tauri + React + Typescript</title>
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>WebLM</title>
+    <script>
+      // Paint the right background before React mounts, so launching the app
+      // never flashes white on a dark desktop.
+      (() => {
+        try {
+          const saved = JSON.parse(localStorage.getItem("weblm.settings") || "{}");
+          const choice = saved.theme || "system";
+          const dark =
+            choice === "dark" ||
+            (choice === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (dark) document.documentElement.classList.add("dark");
+          document.documentElement.style.background = dark ? "#171613" : "#f4f2ec";
+        } catch {}
+      })();
+    </script>
   </head>
 
   <body>

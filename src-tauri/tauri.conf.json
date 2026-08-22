@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "weblm",
-        "width": 800,
-        "height": 600
+        "title": "WebLM",
+        "width": 1160,
+        "height": 780,
+        "minWidth": 720,
+        "minHeight": 520
       }
     ],
     "security": {

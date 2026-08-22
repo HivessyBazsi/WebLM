@@ -1,57 +1,86 @@
-import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css"; // <-- this is where Tailwind gets loaded
+import { useEffect, useState } from "react";
+import { ChatView } from "./components/ChatView";
+import { SettingsDialog } from "./components/Settings";
+import { Sidebar } from "./components/Sidebar";
+import { StoreProvider, useStore } from "./lib/store";
 
-function App() {
-  const [reply, setReply] = useState("");
+const KEY_SIDEBAR = "weblm.sidebar";
 
-  async function askRust() {
-    // invoke() sends a message to Rust and waits for the response
-    const result = await invoke<string>("greet", { name: "World" });
-    setReply(result);
-  }
-  async function streamRust(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    const result = await invoke<string>("appendtext", { text: e.target.value, append: " extra" });
-    setReply(result);
-  }
+const NARROW = "(max-width: 767px)";
+
+function Shell() {
+  const { createChat } = useStore();
+  const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW).matches);
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => !window.matchMedia(NARROW).matches && localStorage.getItem(KEY_SIDEBAR) !== "closed",
+  );
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Collapsing to a narrow window tucks the sidebar away rather than letting
+  // it eat the thread; widening restores whatever the user last chose.
+  useEffect(() => {
+    const media = window.matchMedia(NARROW);
+    const onChange = (e: MediaQueryListEvent) => {
+      setNarrow(e.matches);
+      setSidebarOpen(e.matches ? false : localStorage.getItem(KEY_SIDEBAR) !== "closed");
+    };
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
+
+  useEffect(() => {
+    if (!narrow) localStorage.setItem(KEY_SIDEBAR, sidebarOpen ? "open" : "closed");
+  }, [narrow, sidebarOpen]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      if (e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        createChat();
+      }
+      if (e.key === "\\") {
+        e.preventDefault();
+        setSidebarOpen((v) => !v);
+      }
+      if (e.key === ",") {
+        e.preventDefault();
+        setSettingsOpen(true);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [createChat]);
 
   return (
-    // Tailwind classes go in className=""
-    // bg-gray-900 = dark background, min-h-screen = full height, etc.
-    <main className="bg-blue-900 min-h-screen flex flex-col items-center justify-center gap-6 text-white font-geist">
-
-      {/* This text is big, bold, and purple */}
-      <h1 className="text-4xl font-bold text-purple-400">
-        Hello from React!
-      </h1>
-
-      {/* This paragraph is smaller and gray */}
-      <p className="text-gray-400 text-sm">
-        This text is styled with Tailwind — no CSS file needed.
-      </p>
-
-      {/* This button calls Rust when clicked */}
-      <button
-        onClick={askRust}
-        className="bg-purple-600 hover:bg-purple-500 px-6 py-2 rounded-lg font-semibold transition-colors"
-      >
-        Ask Rust a question
-      </button>
-
-      <textarea
-        onChange={streamRust}
-        className=""
+    <div className="relative flex h-full w-full overflow-hidden">
+      <Sidebar
+        open={sidebarOpen}
+        onToggle={() => setSidebarOpen((v) => !v)}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onNavigate={() => narrow && setSidebarOpen(false)}
       />
-
-      {/* This only shows up after Rust replies */}                                               
-      {reply && (
-        <p className="bg-gray-800 border border-purple-500 rounded-lg px-4 py-2 text-green-400">
-          Rust says: {reply}
-        </p>
+      {narrow && sidebarOpen && (
+        <div
+          className="absolute inset-0 z-30 animate-fade bg-black/30"
+          onClick={() => setSidebarOpen(false)}
+        />
       )}
-
-    </main>
+      <ChatView
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen((v) => !v)}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+    </div>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <StoreProvider>
+      <Shell />
+    </StoreProvider>
+  );
+}
