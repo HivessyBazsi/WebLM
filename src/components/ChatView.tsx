@@ -75,7 +75,15 @@ function TopBar({
   );
 }
 
-function EmptyState({ seed, onPick }: { seed: Seed; onPick(prompt: string): void }) {
+function EmptyState({
+  seed,
+  onSeedConsumed,
+  onPick,
+}: {
+  seed?: Seed;
+  onSeedConsumed(): void;
+  onPick(prompt: string): void;
+}) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-4 pb-16">
       <div className="w-full max-w-3xl animate-rise">
@@ -87,7 +95,7 @@ function EmptyState({ seed, onPick }: { seed: Seed; onPick(prompt: string): void
           Every token is generated on your own hardware. Nothing is uploaded, nothing is logged.
         </p>
 
-        <Composer autoFocus centered seed={seed} />
+        <Composer autoFocus centered seed={seed} onSeedConsumed={onSeedConsumed} />
 
         <div className="mt-4 flex flex-wrap justify-center gap-2">
           {SUGGESTIONS.map((item) => (
@@ -116,7 +124,11 @@ export function ChatView({
   onOpenSettings(): void;
 }) {
   const { active, streamingId } = useStore();
-  const [seed, setSeed] = useState<Seed>({ text: "", n: 0 });
+  // Cleared as soon as the composer picks it up: otherwise the docked
+  // composer mounts with the same seed once the first reply arrives and the
+  // just-sent prompt pops back into the box.
+  const [seed, setSeed] = useState<Seed | undefined>(undefined);
+  const seedCount = useRef(0);
   const [atBottom, setAtBottom] = useState(true);
 
   const scroller = useRef<HTMLDivElement>(null);
@@ -156,7 +168,14 @@ export function ChatView({
       <TopBar sidebarOpen={sidebarOpen} onToggleSidebar={onToggleSidebar} onOpenSettings={onOpenSettings} />
 
       {messages.length === 0 ? (
-        <EmptyState seed={seed} onPick={(prompt) => setSeed((s) => ({ text: prompt, n: s.n + 1 }))} />
+        <EmptyState
+          seed={seed}
+          onSeedConsumed={() => setSeed(undefined)}
+          onPick={(prompt) => {
+            seedCount.current += 1;
+            setSeed({ text: prompt, n: seedCount.current });
+          }}
+        />
       ) : (
         <>
           <div
@@ -184,7 +203,7 @@ export function ChatView({
             >
               <ChevronDownIcon className="size-4" />
             </button>
-            <Composer seed={seed} />
+            <Composer />
           </div>
         </>
       )}

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useStore } from "../lib/store";
-import { cn } from "../lib/utils";
+import { cn, modKeyLabel } from "../lib/utils";
 import { ArrowUpIcon, StopIcon } from "./Icons";
 
 const MAX_HEIGHT = 220;
@@ -14,10 +14,13 @@ export interface Seed {
 export function Composer({
   autoFocus,
   seed,
+  onSeedConsumed,
   centered,
 }: {
   autoFocus?: boolean;
   seed?: Seed;
+  /** Fired once the seed has been written into the box, so it is not re-applied. */
+  onSeedConsumed?(): void;
   /** Centered under the greeting on an empty thread, rather than docked at the bottom. */
   centered?: boolean;
 }) {
@@ -26,8 +29,12 @@ export function Composer({
   const [focused, setFocused] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
 
+  // Held in a ref so re-created callbacks never re-trigger the seed effect.
+  const onSeedConsumedRef = useRef(onSeedConsumed);
+  onSeedConsumedRef.current = onSeedConsumed;
+
   const streaming = Boolean(streamingId);
-  const blocked = !settings.defaultModel || models.length === 0;
+  const blocked = !settings.defaultModel || models.length === 0 || connection.state !== "online";
   const canSend = value.trim().length > 0 && !streaming && !blocked;
 
   // Grow with the content, then scroll.
@@ -43,6 +50,7 @@ export function Composer({
     if (!seed?.text) return;
     setValue(seed.text);
     ref.current?.focus();
+    onSeedConsumedRef.current?.();
   }, [seed?.n, seed?.text]);
 
   // "/" anywhere focuses the composer, the way a chat app should behave.
@@ -67,13 +75,15 @@ export function Composer({
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const enterSends = settings.sendOnEnter ? !e.shiftKey : e.metaKey || e.ctrlKey;
-    if (e.key === "Enter" && enterSends) {
+    if (e.key === "Enter" && !e.nativeEvent.isComposing && enterSends) {
       e.preventDefault();
       submit();
     }
   };
 
-  const hint = settings.sendOnEnter ? "Enter to send · Shift + Enter for a new line" : "⌘ + Enter to send";
+  const hint = settings.sendOnEnter
+    ? "Enter to send · Shift + Enter for a new line"
+    : `${modKeyLabel()} + Enter to send`;
 
   return (
     <div className={cn("mx-auto w-full max-w-3xl", centered ? "px-0" : "px-4 pb-4")}>
@@ -85,6 +95,7 @@ export function Composer({
       >
         <textarea
           ref={ref}
+          data-composer
           rows={1}
           value={value}
           autoFocus={autoFocus}

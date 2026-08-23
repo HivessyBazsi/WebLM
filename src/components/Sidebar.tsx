@@ -68,11 +68,25 @@ function Row({ conversation, onNavigate }: { conversation: Conversation; onNavig
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  /** Guards against the blur that fires when the input unmounts. */
+  const resolved = useRef(false);
   const isActive = conversation.id === activeId;
 
+  const startEditing = () => {
+    resolved.current = false;
+    setEditing(true);
+  };
+
   const commit = () => {
-    const value = inputRef.current?.value ?? "";
-    renameChat(conversation.id, value);
+    if (resolved.current) return;
+    resolved.current = true;
+    renameChat(conversation.id, inputRef.current?.value ?? "");
+    setEditing(false);
+  };
+
+  const cancel = () => {
+    if (resolved.current) return;
+    resolved.current = true;
     setEditing(false);
   };
 
@@ -91,7 +105,7 @@ function Row({ conversation, onNavigate }: { conversation: Conversation; onNavig
           onBlur={commit}
           onKeyDown={(e) => {
             if (e.key === "Enter") commit();
-            if (e.key === "Escape") setEditing(false);
+            if (e.key === "Escape") cancel();
           }}
           className="w-full rounded-lg border border-accent bg-surface px-2.5 py-2 text-[0.8rem] outline-none"
         />
@@ -102,7 +116,7 @@ function Row({ conversation, onNavigate }: { conversation: Conversation; onNavig
               selectChat(conversation.id);
               onNavigate();
             }}
-            onDoubleClick={() => setEditing(true)}
+            onDoubleClick={startEditing}
             className="flex min-w-0 flex-1 items-center gap-2 py-2 pr-1 pl-2.5 text-left"
           >
             {conversation.pinned && <PinIcon className="size-3 shrink-0 text-accent" />}
@@ -121,16 +135,17 @@ function Row({ conversation, onNavigate }: { conversation: Conversation; onNavig
               label="Chat options"
               tip="left"
               onClick={() => setMenuOpen((v) => !v)}
+              compact
               className={cn(
-                "size-7 opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+                "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
                 menuOpen && "opacity-100",
               )}
             >
               <DotsIcon className="size-4" />
             </IconButton>
 
-            <Popover open={menuOpen} onClose={() => setMenuOpen(false)} align="right">
-              <MenuItem icon={<PencilIcon />} onClick={() => { setMenuOpen(false); setEditing(true); }}>
+            <Popover open={menuOpen} onClose={() => setMenuOpen(false)} align="right" className="p-1">
+              <MenuItem icon={<PencilIcon />} onClick={() => { setMenuOpen(false); startEditing(); }}>
                 Rename
               </MenuItem>
               <MenuItem icon={<PinIcon />} onClick={() => { setMenuOpen(false); togglePin(conversation.id); }}>
