@@ -43,7 +43,9 @@ function save(key: string, value: unknown) {
 }
 
 function reviveStats(raw: unknown): Stats | undefined {
-  if (!raw || typeof raw !== "object") return undefined;
+  // `typeof [] === "object"`, and an array would otherwise be reported as a
+  // real-looking "0.0 tok/s · 0ms · 0 tok" row.
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
   const s = raw as Record<string, unknown>;
   const num = (v: unknown) => (Number.isFinite(v) ? (v as number) : 0);
   const stats: Stats = {
