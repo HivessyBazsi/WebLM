@@ -38,11 +38,16 @@ function Shell() {
       // Ctrl+Shift+N and friends belong to the browser / OS, not to us.
       if (!mod || e.altKey || e.shiftKey) return;
       // The settings dialog owns the keyboard while it is up, and a rename or
-      // filter field must not have a new chat created out from under it. The
-      // composer is a <textarea> and deliberately keeps its shortcuts.
+      // filter field must not have a new chat created out from under it.
       if (settingsOpen) return;
       const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === "INPUT" || target.tagName === "SELECT" || target.isContentEditable)) return;
+      if (target) {
+        const tag = target.tagName;
+        if (tag === "INPUT" || tag === "SELECT" || target.isContentEditable) return;
+        // The composer deliberately keeps its shortcuts; the edit-in-place box
+        // in a message is also a <textarea>, and holds an unsaved draft.
+        if (tag === "TEXTAREA" && !target.closest("[data-composer]")) return;
+      }
       if (e.key.toLowerCase() === "n") {
         e.preventDefault();
         createChat();

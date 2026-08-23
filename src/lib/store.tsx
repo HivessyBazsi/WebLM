@@ -16,6 +16,8 @@ import {
   type Message,
   type ModelInfo,
   type Settings,
+  type Stats,
+  type ThemeChoice,
 } from "./types";
 import { deriveTitle, uid } from "./utils";
 
@@ -40,6 +42,20 @@ function save(key: string, value: unknown) {
   }
 }
 
+function reviveStats(raw: unknown): Stats | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const s = raw as Record<string, unknown>;
+  const num = (v: unknown) => (Number.isFinite(v) ? (v as number) : 0);
+  const stats: Stats = {
+    tokens: num(s.tokens),
+    tokensPerSecond: num(s.tokensPerSecond),
+    firstTokenMs: num(s.firstTokenMs),
+    totalMs: num(s.totalMs),
+  };
+  if (Number.isFinite(s.promptTokens)) stats.promptTokens = s.promptTokens as number;
+  return stats;
+}
+
 /** Shape-guard a stored message. Anything that fails the schema is dropped
  *  rather than left to throw inside a render. */
 function reviveMessage(raw: unknown): Message | null {
@@ -48,17 +64,24 @@ function reviveMessage(raw: unknown): Message | null {
   if (typeof m.id !== "string" || typeof m.content !== "string") return null;
   if (m.role !== "user" && m.role !== "assistant" && m.role !== "system") return null;
 
-  // `streaming` is deliberately not carried over: a stream cannot survive a
-  // reload, and a restored `streaming: true` would blink a caret forever and
-  // keep copy / regenerate / delete hidden with no way to recover.
-  const { streaming: _dropped, ...rest } = m;
-  return {
-    ...rest,
+  const message: Message = {
     id: m.id,
     role: m.role,
     content: m.content,
     createdAt: Number.isFinite(m.createdAt) ? (m.createdAt as number) : Date.now(),
-  } as Message;
+  };
+
+  // Optional fields are copied only when they hold the shape the UI renders:
+  // a `model` or `error` of the wrong type reaches JSX as a React child and
+  // throws. `streaming` is never carried over at all — a stream cannot survive
+  // a reload, and restoring it would blink a caret forever with copy /
+  // regenerate / delete hidden behind it.
+  if (typeof m.model === "string") message.model = m.model;
+  if (typeof m.error === "string") message.error = m.error;
+  if (m.stopped === true) message.stopped = true;
+  const stats = reviveStats(m.stats);
+  if (stats) message.stats = stats;
+  return message;
 }
 
 function reviveConversation(raw: unknown): Conversation | null {
@@ -86,10 +109,27 @@ function loadConversations(): Conversation[] {
   return raw.map(reviveConversation).filter((c): c is Conversation => c !== null);
 }
 
+const THEMES: readonly ThemeChoice[] = ["light", "dark", "system"];
+
 function loadSettings(): Settings {
   const raw = load<unknown>(KEY_SETTINGS, {});
-  const stored = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Partial<Settings>) : {};
-  return { ...DEFAULT_SETTINGS, ...stored };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ...DEFAULT_SETTINGS };
+  const s = raw as Record<string, unknown>;
+  const str = (v: unknown, fallback: string) => (typeof v === "string" ? v : fallback);
+  const num = (v: unknown, fallback: number) => (Number.isFinite(v) ? (v as number) : fallback);
+  const bool = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
+  return {
+    theme: THEMES.includes(s.theme as ThemeChoice) ? (s.theme as ThemeChoice) : DEFAULT_SETTINGS.theme,
+    serverUrl: str(s.serverUrl, DEFAULT_SETTINGS.serverUrl),
+    defaultModel: typeof s.defaultModel === "string" ? s.defaultModel : null,
+    systemPrompt: str(s.systemPrompt, DEFAULT_SETTINGS.systemPrompt),
+    temperature: num(s.temperature, DEFAULT_SETTINGS.temperature),
+    topP: num(s.topP, DEFAULT_SETTINGS.topP),
+    contextLength: num(s.contextLength, DEFAULT_SETTINGS.contextLength),
+    maxTokens: num(s.maxTokens, DEFAULT_SETTINGS.maxTokens),
+    showStats: bool(s.showStats, DEFAULT_SETTINGS.showStats),
+    sendOnEnter: bool(s.sendOnEnter, DEFAULT_SETTINGS.sendOnEnter),
+  };
 }
 
 function newConversation(model: string | null): Conversation {

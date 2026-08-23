@@ -95,6 +95,7 @@ export function Composer({
       >
         <textarea
           ref={ref}
+          data-composer
           rows={1}
           value={value}
           autoFocus={autoFocus}
