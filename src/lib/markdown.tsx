@@ -56,12 +56,16 @@ function parseBlocks(source: string): Block[] {
     // ── fenced code ──────────────────────────────────────────────────────
     const fence = RE_FENCE.exec(line);
     if (fence) {
-      const marker = fence[1][0].repeat(3);
+      // CommonMark lets the closer be *longer* than the opener, and a fence
+      // opened with four backticks is not closed by an inner three.
+      const marker = fence[1][0];
+      const openLength = fence[1].length;
       const body: string[] = [];
       i += 1;
       let closed = false;
       while (i < lines.length) {
-        if (lines[i].trimStart().startsWith(marker) && !lines[i].trim().slice(3).trim()) {
+        const candidate = lines[i].trim();
+        if (candidate.length >= openLength && candidate === marker.repeat(candidate.length)) {
           closed = true;
           i += 1;
           break;

@@ -16,6 +16,7 @@ export function formatBytes(bytes: number): string {
 }
 
 export function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "—";
   if (ms < 1000) return `${Math.round(ms)}ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
   const m = Math.floor(ms / 60_000);
@@ -23,7 +24,15 @@ export function formatDuration(ms: number): string {
 }
 
 export function formatCount(n: number): string {
-  return n >= 10_000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+  if (!Number.isFinite(n)) return "—";
+  return n >= 10_000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n));
+}
+
+/** The modifier the send shortcut actually accepts on this platform. */
+export function modKeyLabel(): string {
+  if (typeof navigator === "undefined") return "Ctrl";
+  const ua = navigator.userAgent;
+  return /Mac|iPhone|iPad|iPod/i.test(ua) ? "⌘" : "Ctrl";
 }
 
 export function relativeTime(ts: number): string {
@@ -38,12 +47,19 @@ export function relativeTime(ts: number): string {
   return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+/** Calendar day index, counted in UTC so the arithmetic is immune to DST.
+ *  The *fields* are local, so "today" still means the user's today. */
+function localDayNumber(d: Date): number {
+  return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000);
+}
+
 /** Buckets used by the sidebar's conversation list. */
 export function dateBucket(ts: number): string {
   const now = new Date();
   const then = new Date(ts);
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const days = Math.floor((startOfToday - new Date(then.getFullYear(), then.getMonth(), then.getDate()).getTime()) / 86_400_000);
+  // Subtracting local midnights and dividing by a fixed 24h mislabels the day
+  // either side of a DST change, when two midnights are only 23h apart.
+  const days = localDayNumber(now) - localDayNumber(then);
   if (days <= 0) return "Today";
   if (days === 1) return "Yesterday";
   if (days < 7) return "Previous 7 days";

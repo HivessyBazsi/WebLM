@@ -35,7 +35,14 @@ function Shell() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
-      if (!mod) return;
+      // Ctrl+Shift+N and friends belong to the browser / OS, not to us.
+      if (!mod || e.altKey || e.shiftKey) return;
+      // The settings dialog owns the keyboard while it is up, and a rename or
+      // filter field must not have a new chat created out from under it. The
+      // composer is a <textarea> and deliberately keeps its shortcuts.
+      if (settingsOpen) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "SELECT" || target.isContentEditable)) return;
       if (e.key.toLowerCase() === "n") {
         e.preventDefault();
         createChat();
@@ -51,7 +58,7 @@ function Shell() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [createChat]);
+  }, [createChat, settingsOpen]);
 
   return (
     <div className="relative flex h-full w-full overflow-hidden">

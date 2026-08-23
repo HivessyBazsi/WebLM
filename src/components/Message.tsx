@@ -23,6 +23,10 @@ function Thinking() {
   );
 }
 
+function rate(value: number | undefined): string {
+  return Number.isFinite(value) ? `${(value as number).toFixed(1)} tok/s` : "—";
+}
+
 function StatChip({ icon, value, title }: { icon: React.ReactNode; value: string; title: string }) {
   return (
     <span title={title} className="inline-flex items-center gap-1 tabular-nums">
@@ -33,7 +37,7 @@ function StatChip({ icon, value, title }: { icon: React.ReactNode; value: string
 }
 
 function UserMessage({ message }: { message: ChatMessage }) {
-  const { editAndResend } = useStore();
+  const { editAndResend, streamingId } = useStore();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
   const [copied, markCopied] = useCopied();
@@ -55,7 +59,7 @@ function UserMessage({ message }: { message: ChatMessage }) {
           <Button
             size="sm"
             variant="primary"
-            disabled={!draft.trim() || draft === message.content}
+            disabled={!draft.trim() || draft === message.content || Boolean(streamingId)}
             onClick={() => { setEditing(false); editAndResend(message.id, draft.trim()); }}
           >
             Send
@@ -71,13 +75,19 @@ function UserMessage({ message }: { message: ChatMessage }) {
         {message.content}
       </div>
       <div className="flex gap-0.5 pr-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-        <IconButton label="Edit" tip="bottom" className="size-7" onClick={() => { setDraft(message.content); setEditing(true); }}>
+        <IconButton
+          label="Edit"
+          tip="bottom"
+          compact
+          disabled={Boolean(streamingId)}
+          onClick={() => { setDraft(message.content); setEditing(true); }}
+        >
           <PencilIcon className="size-3.5" />
         </IconButton>
         <IconButton
           label={copied ? "Copied" : "Copy"}
           tip="bottom"
-          className="size-7"
+          compact
           onClick={() => copyText(message.content).then((ok) => ok && markCopied())}
         >
           {copied ? <CheckIcon className="size-3.5 text-success" /> : <CopyIcon className="size-3.5" />}
@@ -88,7 +98,7 @@ function UserMessage({ message }: { message: ChatMessage }) {
 }
 
 function AssistantMessage({ message }: { message: ChatMessage }) {
-  const { retry, deleteMessage, settings } = useStore();
+  const { retry, deleteMessage, settings, streamingId } = useStore();
   const [copied, markCopied] = useCopied();
   const empty = !message.content.trim();
 
@@ -123,11 +133,7 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
           {settings.showStats && message.stats && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono">
               {message.model && <span className="text-muted">{message.model}</span>}
-              <StatChip
-                icon={<BoltIcon />}
-                title="Generation speed"
-                value={`${message.stats.tokensPerSecond.toFixed(1)} tok/s`}
-              />
+              <StatChip icon={<BoltIcon />} title="Generation speed" value={rate(message.stats.tokensPerSecond)} />
               <StatChip
                 icon={<ClockIcon />}
                 title="Time to first token"
@@ -145,15 +151,15 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
             <IconButton
               label={copied ? "Copied" : "Copy"}
               tip="top"
-              className="size-7"
+              compact
               onClick={() => copyText(message.content).then((ok) => ok && markCopied())}
             >
               {copied ? <CheckIcon className="size-3.5 text-success" /> : <CopyIcon className="size-3.5" />}
             </IconButton>
-            <IconButton label="Regenerate" tip="top" className="size-7" onClick={() => retry(message.id)}>
+            <IconButton label="Regenerate" tip="top" compact disabled={Boolean(streamingId)} onClick={() => retry(message.id)}>
               <RetryIcon className="size-3.5" />
             </IconButton>
-            <IconButton label="Delete" tip="top" className="size-7" onClick={() => deleteMessage(message.id)}>
+            <IconButton label="Delete" tip="top" compact onClick={() => deleteMessage(message.id)}>
               <TrashIcon className="size-3.5" />
             </IconButton>
           </div>

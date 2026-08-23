@@ -36,7 +36,7 @@ export function ModelPicker() {
         <ChevronDownIcon className={cn("size-3.5 shrink-0 text-faint transition-transform", open && "rotate-180")} />
       </button>
 
-      <Popover open={open} onClose={() => setOpen(false)} align="left" className="w-[19rem] p-0">
+      <Popover open={open} onClose={() => setOpen(false)} align="left" className="w-[19rem]">
         <div className="border-b border-line p-2">
           <div className="relative">
             <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-faint" />

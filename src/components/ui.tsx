@@ -54,16 +54,19 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   label: string;
   tip?: "top" | "bottom" | "left";
   active?: boolean;
+  /** Renders at 28px instead of 32px, for inline message / row actions. */
+  compact?: boolean;
 }
 
-export function IconButton({ label, tip = "bottom", active, className, children, ...props }: IconButtonProps) {
+export function IconButton({ label, tip = "bottom", active, compact, className, children, ...props }: IconButtonProps) {
   return (
     <span className="group/tip relative inline-flex">
       <button
         {...props}
         aria-label={label}
         className={cn(
-          "inline-flex size-8 items-center justify-center rounded-lg text-muted transition-colors duration-150",
+          "inline-flex items-center justify-center rounded-lg text-muted transition-colors duration-150",
+          compact ? "size-7" : "size-8",
           "hover:bg-surface-2 hover:text-ink disabled:pointer-events-none disabled:opacity-40",
           active && "bg-surface-2 text-ink",
           className,
@@ -104,8 +107,14 @@ export function Popover({ open, onClose, align = "left", side = "bottom", classN
 
   useEffect(() => {
     if (!open) return;
+    // The trigger lives in the `relative` wrapper this panel is anchored to.
+    // Clicks on it must not count as "outside", or the close here and the
+    // trigger's own toggle cancel out and the popover can never be dismissed.
+    const anchor = ref.current?.parentElement ?? null;
     const onPointer = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+      const target = e.target as Node;
+      if (anchor?.contains(target)) return;
+      if (ref.current && !ref.current.contains(target)) onClose();
     };
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     // Defer so the click that opened the popover does not immediately close it.
@@ -124,7 +133,7 @@ export function Popover({ open, onClose, align = "left", side = "bottom", classN
     <div
       ref={ref}
       className={cn(
-        "absolute z-50 min-w-[13rem] animate-pop overflow-hidden rounded-xl border border-line bg-elev p-1 shadow-pop",
+        "absolute z-50 min-w-[13rem] animate-pop overflow-hidden rounded-xl border border-line bg-elev shadow-pop",
         side === "bottom" ? "top-[calc(100%+6px)]" : "bottom-[calc(100%+6px)]",
         align === "left" && "left-0",
         align === "right" && "right-0",

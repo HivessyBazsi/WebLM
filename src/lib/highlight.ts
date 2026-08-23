@@ -50,7 +50,19 @@ const PATTERN = new RegExp(
   "g",
 );
 
-function classify(text: string, rest: string): TokenKind {
+/** Whether the next non-space character after `from` opens a call. Looking
+ *  ahead in place avoids slicing the tail of the source for every token,
+ *  which turned tokenising one block into O(n²). */
+function opensCall(code: string, from: number): boolean {
+  for (let i = from; i < code.length; i += 1) {
+    const ch = code[i];
+    if (ch === "(") return true;
+    if (ch !== " " && ch !== "\t" && ch !== "\n" && ch !== "\r") return false;
+  }
+  return false;
+}
+
+function classify(text: string, code: string, after: number): TokenKind {
   const head = text[0];
   if (text.startsWith("/*") || text.startsWith("//") || text.startsWith("<!--")) return "comment";
   if (head === "#") return "comment";
@@ -60,7 +72,7 @@ function classify(text: string, rest: string): TokenKind {
   if (/[A-Za-z_$]/.test(head)) {
     if (KEYWORDS.has(text)) return "keyword";
     // A bare identifier immediately followed by `(` reads as a call site.
-    return /^\s*\(/.test(rest) ? "fn" : "plain";
+    return opensCall(code, after) ? "fn" : "plain";
   }
   return "punct";
 }
@@ -73,8 +85,8 @@ export function tokenize(code: string): Token[] {
   for (let match = PATTERN.exec(code); match; match = PATTERN.exec(code)) {
     if (match.index > last) tokens.push({ text: code.slice(last, match.index), kind: "plain" });
     const text = match[0];
-    tokens.push({ text, kind: classify(text, code.slice(match.index + text.length)) });
     last = match.index + text.length;
+    tokens.push({ text, kind: classify(text, code, last) });
   }
   if (last < code.length) tokens.push({ text: code.slice(last), kind: "plain" });
   return tokens;

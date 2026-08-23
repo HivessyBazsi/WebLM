@@ -40,6 +40,58 @@ function save(key: string, value: unknown) {
   }
 }
 
+/** Shape-guard a stored message. Anything that fails the schema is dropped
+ *  rather than left to throw inside a render. */
+function reviveMessage(raw: unknown): Message | null {
+  if (!raw || typeof raw !== "object") return null;
+  const m = raw as Record<string, unknown>;
+  if (typeof m.id !== "string" || typeof m.content !== "string") return null;
+  if (m.role !== "user" && m.role !== "assistant" && m.role !== "system") return null;
+
+  // `streaming` is deliberately not carried over: a stream cannot survive a
+  // reload, and a restored `streaming: true` would blink a caret forever and
+  // keep copy / regenerate / delete hidden with no way to recover.
+  const { streaming: _dropped, ...rest } = m;
+  return {
+    ...rest,
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    createdAt: Number.isFinite(m.createdAt) ? (m.createdAt as number) : Date.now(),
+  } as Message;
+}
+
+function reviveConversation(raw: unknown): Conversation | null {
+  if (!raw || typeof raw !== "object") return null;
+  const c = raw as Record<string, unknown>;
+  if (typeof c.id !== "string") return null;
+  const createdAt = Number.isFinite(c.createdAt) ? (c.createdAt as number) : Date.now();
+  return {
+    id: c.id,
+    title: typeof c.title === "string" && c.title.trim() ? c.title : "New chat",
+    model: typeof c.model === "string" ? c.model : null,
+    messages: Array.isArray(c.messages)
+      ? c.messages.map(reviveMessage).filter((m): m is Message => m !== null)
+      : [],
+    createdAt,
+    // NaN timestamps would silently poison sorting and date bucketing.
+    updatedAt: Number.isFinite(c.updatedAt) ? (c.updatedAt as number) : createdAt,
+    pinned: c.pinned === true,
+  };
+}
+
+function loadConversations(): Conversation[] {
+  const raw = load<unknown>(KEY_CONVERSATIONS, []);
+  if (!Array.isArray(raw)) return [];
+  return raw.map(reviveConversation).filter((c): c is Conversation => c !== null);
+}
+
+function loadSettings(): Settings {
+  const raw = load<unknown>(KEY_SETTINGS, {});
+  const stored = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Partial<Settings>) : {};
+  return { ...DEFAULT_SETTINGS, ...stored };
+}
+
 function newConversation(model: string | null): Conversation {
   const now = Date.now();
   return { id: uid(), title: "New chat", model, messages: [], createdAt: now, updatedAt: now, pinned: false };
@@ -76,24 +128,41 @@ interface Store {
 const StoreContext = createContext<Store | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [conversations, setConversations] = useState<Conversation[]>(() =>
-    load<Conversation[]>(KEY_CONVERSATIONS, []),
-  );
-  const [activeId, setActiveId] = useState<string | null>(() => load<string | null>(KEY_ACTIVE, null));
-  const [settings, setSettings] = useState<Settings>(() => ({
-    ...DEFAULT_SETTINGS,
-    ...load<Partial<Settings>>(KEY_SETTINGS, {}),
-  }));
+  const [conversations, setConversations] = useState<Conversation[]>(loadConversations);
+  const [activeId, setActiveId] = useState<string | null>(() => {
+    const stored = load<unknown>(KEY_ACTIVE, null);
+    return typeof stored === "string" ? stored : null;
+  });
+  const [settings, setSettings] = useState<Settings>(loadSettings);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [connection, setConnection] = useState<Connection>({ state: "checking" });
   const [streamingId, setStreamingId] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+  /** Mirrors `streamingId` for async callbacks, which must not read stale state. */
+  const streamingIdRef = useRef<string | null>(null);
+  /** Conversation the current generation is writing into. */
+  const streamingConvRef = useRef<string | null>(null);
   /** Latest conversations, readable from async callbacks without stale closures. */
   const convRef = useRef(conversations);
   convRef.current = conversations;
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+
+  const setStreaming = useCallback((id: string | null) => {
+    streamingIdRef.current = id;
+    setStreamingId(id);
+  }, []);
+
+  /** Abort whatever is generating and forget it, without waiting for the
+   *  provider's rejection to make its way back through `settle`. */
+  const cancelStream = useCallback(() => {
+    const controller = abortRef.current;
+    abortRef.current = null;
+    streamingConvRef.current = null;
+    setStreaming(null);
+    controller?.abort();
+  }, [setStreaming]);
 
   useEffect(() => save(KEY_CONVERSATIONS, conversations), [conversations]);
   useEffect(() => save(KEY_SETTINGS, settings), [settings]);
@@ -143,11 +212,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const selectChat = useCallback((id: string) => setActiveId(id), []);
 
-  const deleteChat = useCallback((id: string) => {
-    const next = convRef.current.filter((c) => c.id !== id);
-    setConversations(next);
-    setActiveId((current) => (current === id ? (next[0]?.id ?? null) : current));
-  }, []);
+  const deleteChat = useCallback(
+    (id: string) => {
+      // Otherwise the request keeps running against a thread that no longer
+      // exists, and settles by clearing a `streamingId` that may by then
+      // belong to a newer send.
+      if (streamingConvRef.current === id) cancelStream();
+      const next = convRef.current.filter((c) => c.id !== id);
+      setConversations(next);
+      setActiveId((current) => (current === id ? (next[0]?.id ?? null) : current));
+    },
+    [cancelStream],
+  );
 
   const renameChat = useCallback(
     (id: string, title: string) => patchConversation(id, (c) => ({ ...c, title: title.trim() || c.title })),
@@ -160,9 +236,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const clearAll = useCallback(() => {
+    if (streamingConvRef.current) cancelStream();
     setConversations([]);
     setActiveId(null);
-  }, []);
+  }, [cancelStream]);
 
   const setModel = useCallback(
     (model: string) => {
@@ -192,11 +269,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         streaming: true,
       };
 
+      // A second generation must never orphan the first: replacing the
+      // controller without aborting leaves the old stream running, and its
+      // settle() would then clear the *new* generation's streaming state.
+      abortRef.current?.abort();
+
       patchConversation(convId, (c) => ({ ...c, messages: [...history, assistant], updatedAt: Date.now() }));
-      setStreamingId(assistantId);
+      setStreaming(assistantId);
 
       const controller = new AbortController();
       abortRef.current = controller;
+      streamingConvRef.current = convId;
 
       // Tokens arrive far faster than React should re-render, so they are
       // buffered and flushed once per animation frame.
@@ -221,8 +304,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           updatedAt: Date.now(),
           messages: c.messages.map((m) => (m.id === assistantId ? { ...m, streaming: false, ...patch } : m)),
         }));
-        setStreamingId(null);
-        abortRef.current = null;
+        // Only stand down if this generation is still the current one.
+        if (streamingIdRef.current === assistantId) setStreaming(null);
+        if (abortRef.current === controller) abortRef.current = null;
+        if (streamingConvRef.current === convId && abortRef.current === null) {
+          streamingConvRef.current = null;
+        }
       };
 
       activeProvider
@@ -246,7 +333,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           else settle({ error: err instanceof Error ? err.message : String(err) });
         });
     },
-    [patchConversation],
+    [patchConversation, setStreaming],
   );
 
   const send = useCallback(
@@ -279,6 +366,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   /** Re-run the turn that produced `messageId`, discarding it and anything after. */
   const retry = useCallback(
     (messageId: string) => {
+      if (streamingIdRef.current) return;
       const conv = convRef.current.find((c) => c.id === activeId);
       if (!conv) return;
       const index = conv.messages.findIndex((m) => m.id === messageId);
@@ -293,6 +381,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const editAndResend = useCallback(
     (messageId: string, content: string) => {
+      if (streamingIdRef.current) return;
       const conv = convRef.current.find((c) => c.id === activeId);
       if (!conv) return;
       const index = conv.messages.findIndex((m) => m.id === messageId);
